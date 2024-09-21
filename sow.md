@@ -1,11 +1,11 @@
-Project Title:
-[Insert Project Title]
+**Project Title:
+*Networked Tic Tac Toe Game
 
-Team:
-[Insert members of team]
+**Team:
+*Ethan Fantl, Nathan Bennick
 
-Project Objective:
-[Briefly describe the goal of the project. What problem are you trying to solve or what functionality are you aiming to achieve?]
+**Project Objective:
+* For our project, we want to be able to create a networked tic tac toe game that 
 
 Scope:
 Inclusions:
