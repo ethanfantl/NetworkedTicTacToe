@@ -1,4 +1,4 @@
-# Tic-Tac-Toe Game Example
+# Tic-Tac-Toe Game
 
 This is a simple Tic-Tac-Toe game implemented using Python and sockets.
 
@@ -12,6 +12,5 @@ This is a simple Tic-Tac-Toe game implemented using Python and sockets.
 * Sockets
 
 **Additional resources:**
-* [Link to Python documentation]
-* [Link to sockets tutorial]
+* Temporarily  Empty, more will be added as additional resources are used.
     
