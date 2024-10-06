@@ -1,7 +1,6 @@
 import sys
 import socket
 import traceback
-import libserver
 import selectors
 import serverlogic
 
@@ -41,7 +40,7 @@ def main():
     print("Server is now listening on", (host, port))
     
     # set blocking to false which is necessary for handeling multiple connections
-    listenSocket.setblocking(false)     
+    listenSocket.setblocking(False)     
     
     # register live socket with sel and wait for incoming connections
     sel.register(listenSocket, selectors.EVENT_READ, data=None)
@@ -65,7 +64,7 @@ def main():
                         message.process_events(mask)
                     except Exception:
                         print(
-                            "Error: exception for connection", f"{message.addr}\n {traceback.format_exc()}"
+                            "Error: exception for connection", f"{message.client_address}\n {traceback.format_exc()}"
                         )
                         message.close() # close the specific connection if there is an error in processing
     except KeyboardInterrupt:
