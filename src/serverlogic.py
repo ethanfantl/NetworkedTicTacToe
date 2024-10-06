@@ -29,7 +29,7 @@ class Message:
         elif event == "w":
             new_event = selectors.EVENT_WRITE
         elif event == "rw":
-            new_event = selectors.EVENT_READ | selector.EVENT_WRITE 
+            new_event = selectors.EVENT_READ | selectors.EVENT_WRITE 
         else:
             raise ValueError(f"Invalid event mask mode recieved. Options are r, w, and rw. Received f{repr(event)}")
         self.selector.modify(self.client_sock, new_event, data=self)
