@@ -36,18 +36,38 @@ if len(sys.argv) != 5:
     print("usage:", sys.argv[0], "<host> <port> <action> <value>")
     sys.exit(1)
 
+# basic movement definitions, we can add or change these later
+valid_actions = [
+    "test",
+    "connect",
+    "disconnect",
+    "ready",
+    "move" 
+]
+
 host, port = sys.argv[1], int(sys.argv[2])
 action, value = sys.argv[3], sys.argv[4]
-request = create_request(action, value)
-start_connection(host, port, request)
+if(action not in valid_actions):
+    print("Defined action %s is not a valid action" % action)
+    sys.exit(1) # error 
+    
+request =  create_request(action, value)
+start_connection(host, port, request) # opens non blocking with socket.connect_ex
 
 try:
     while True:
-        events = sel.select(timeout=1)
+        events = sel.select(timeout=None)
         for key, mask in events:
             message = key.data
             try:
                 message.process_events(mask)
+                if message.response is not None:
+                    message.response = None
+                    new_action = input("Enter action: ") 
+                    new_value = input("Enter value: ")
+                    message.send_new_request(new_action, new_value)
+                    
+                    message._select_selector_events_mask("rw")
             except Exception as e:
                 logging.error(f"Main: error: exception for {message.addr}:\n{traceback.format_exc()}")
                 message.close()
