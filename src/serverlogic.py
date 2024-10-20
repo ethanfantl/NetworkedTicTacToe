@@ -3,13 +3,16 @@ import selectors
 import json
 import io
 import struct
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 '''
 This object manages communication between the server and client. 
 '''
 class Message:
-    def __init__(self, selector, client_sock, client_address):
+    def __init__(self, selector, client_sock, client_address, game_state_recorder):
         self.selector = selector
         self.client_sock = client_sock 
         self.client_address = client_address 
@@ -19,6 +22,7 @@ class Message:
         self.json_header = None
         self.request = None
         self.response_created = False 
+        self.game_state_recorder = game_state_recorder
         
     '''
     This method is intended to update the selector that is monitoring the client socket to the appropriate event 
@@ -53,16 +57,17 @@ class Message:
     ''' 
     def _write(self):
         if self._send_buffer:
-            print("Sending", repr(self._send_buffer), 'to', self.client_address)
+            logging.info(f"Sending {repr(self._send_buffer)} to, {self.client_address}")
             try:
                 sent = self.client_sock.send(self._send_buffer) # sending as much data as the socket can handle at once
             except BlockingIOError:
                 pass
             else:
                 self._send_buffer = self._send_buffer[sent:] # remove all data that was sent through socket
-                # if we have sent it all, close the connection
-                if sent and not self._send_buffer:
-                    self.close()
+                if not self._send_buffer:
+                    self._select_selector_events_mask("rw")
+                # if sent and not self._send_buffer:
+                    # self.close()
     
     '''
     This method encodes a python object to a JSON readable format. Return the bytes for the specific encoding
@@ -100,19 +105,31 @@ class Message:
         message = message_hdr + json_header_bytes + content_bytes  # Full message
         return message
 
+    def process_ready_request(self, value):
+        return self.game_state_recorder.update_ready_status(self.client_address, value)
+
     '''
-    Create a response for a json request (this will be our only request)
+    Create a response for a json request 
     '''
     def _create_response_json_content(self):
         action = self.request.get("action")
+        value = self.request.get("value")
         
-        # here will be our actions. May want a switch statement later but right now all we have is test
         if action == "test":
-            answer = f"Hello client, you have successfully pinged the server and got a response back :)"
+            answer = f"Hello client, you have successfully pinged the server and got a response back"
             content = {"result": answer}
+        elif (action == "ready"):
+            answer = f"{self.client_address} has updated their ready status"
+            if(self.process_ready_request(value)):
+                dictionary_status = "Request has been recorded in game state recorder"
+                content = {"result": answer + ". " + dictionary_status}
+            else:
+                dictionary_status = "Request FAILED to process in server game state recorder"
+                content = {"result": answer + ". " + dictionary_status}
         else:
             content = {"result": f'Error: invalid action "{action}".'}
-        content_encoding = "utf-8" # we only are using utf-8 as our encoding
+        content_encoding = "utf-8"
+        
         response = {
             "content_bytes": self._json_encode(content, content_encoding),
             "content_type": "text/json",
@@ -174,6 +191,7 @@ class Message:
     '''
     def read(self):
         self._read() # internal read
+        logging.info("The server has interally read a new message")
         
         if self._json_header_length is None:
             self.process_fixed_protocol_header()
@@ -194,6 +212,14 @@ class Message:
             if not self.response_created:
                 self.create_response()
         self._write()
+        
+        if not self._send_buffer and self.response_created:
+            self.response_created = False
+            self.request = None
+            self._json_header_length = None
+            self.json_header = None
+            self._recieved_buffer = b""
+            self._select_selector_events_mask("r")
     
     '''
     Close the connection with the client and unregister the socket from our selector
@@ -227,6 +253,48 @@ class Message:
             self.read()
         if mask & selectors.EVENT_WRITE:
             self.write()
+
+class PlayerNotFoundError(Exception):
+    pass
+            
+class GameStateRecorder:
+    def __init__(self):
+        self.player_dictionary = {}
+    
+    def add_player(self, addr, connection):
+        if(addr in self.player_dictionary):
+            print(f"player from connection {addr} has already been registered in the game state board.")
+            return
+        self.player_dictionary[addr] = {
+            "connection": connection,
+            "address": addr,
+            "game_state": {"board": [" "] * 9, "ready": "no", "turn": None}
+        }
+        logging.info( f"Player from connection {addr} has been successfully added to the game state board")
+        
+    def remove_player(self, addr):
+        if addr not in self.player_dictionary:
+            raise PlayerNotFoundError("You are trying to remove a player that is not registered in the game state recorder. Exiting...")
+        del self.player_dictionary[addr] 
+        logging.info(f"Player {addr} has been removed")
+           
+    def update_ready_status(self, addr, is_ready):
+        if addr not in self.player_dictionary:
+            raise PlayerNotFoundError("Server tried to update the ready status of a player that has not been registered in the GameStateRecorder")
+        if(is_ready != "yes" and is_ready != "no"):
+            print (f"You tried to update player ready status with invalid option {is_ready}. Your options are yes|no")
+            return False
+        if (is_ready == "yes"):
+            self.player_dictionary[addr]["game_state"]["ready"] = "yes"
+        else:
+            logging.info(f"Setting player {addr} to not ready")
+            self.player_dictionary[addr]["game_state"]["ready"] = "no"
+            
+            
+        for address, details in self.player_dictionary.items():
+            logging.info(f"Player address is {address}, status is {details['game_state']['ready']}")
+        return True
+    
         
         
     

@@ -3,6 +3,9 @@ import selectors
 import json
 import io
 import struct
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class Message:
@@ -43,7 +46,7 @@ class Message:
     def _write(self):
         if self._send_buffer:
             try:
-                sent = self.sock.send(self._send_buffer)
+                sent = self.sock.send(self._send_buffer) # send data to the server registerd in the socket conneciton
             except BlockingIOError:
                 pass
             else:
@@ -72,11 +75,27 @@ class Message:
         message_hdr = struct.pack(">H", len(json_header_bytes))
         return message_hdr + json_header_bytes + content_bytes
 
+    def send_new_request(self, new_action, new_value):
+        self.request = {
+            "type" : "text/json",
+            "encoding": "utf-8",
+            "content": {"action": new_action, "value": new_value}
+        }
+        
+        logging.info("Sending a new request to the server:)")
+        
+        # reset buffers and queue next request
+        self._send_buffer = self._create_message()
+        self._request_queued = True
+        self._select_selector_events_mask("rw")
+
     def process_fixed_protocol_header(self):
         header_length = 2
         if len(self._recv_buffer) >= header_length:
             self._json_header_length = struct.unpack(">H", self._recv_buffer[:header_length])[0]
             self._recv_buffer = self._recv_buffer[header_length:]
+        else:
+            logging.info(f"not enough data in the protocol header. Here is the buffer length {len(self._recv_buffer)}")
 
     def process_json_header(self):
         if len(self._recv_buffer) >= self._json_header_length:
@@ -88,12 +107,18 @@ class Message:
         if len(self._recv_buffer) >= content_length:
             data = self._recv_buffer[:content_length]
             self.response = self._json_decode(data)
+            logging.info(f"Got a response {self.response} from the server")
             print(f"Received response: {self.response}")
-            self.close()
+            # self.close() -> we don't want to close the socket, we want persistant player connection
+            self._json_header_length = None
+            self.json_header = None
+            self.request = None
+            self._request_queued = False
+            self._recv_buffer = b""
+            self._select_selector_events_mask("w")
 
     def read(self):
         self._read()
-
         if self._json_header_length is None:
             self.process_fixed_protocol_header()
 
@@ -102,6 +127,8 @@ class Message:
 
         if self.json_header and self.response is None:
             self.process_response()
+        
+        # self._select_selector_events_mask("w")
 
     def write(self):
         if not self._request_queued:
@@ -114,6 +141,10 @@ class Message:
             self.read()
         if mask & selectors.EVENT_WRITE:
             self.write()
+            
+        # if we send all the data, set back to write mode
+        if not self._send_buffer:
+            self._select_selector_events_mask("r")
 
     def close(self):
         print("Closing connection to", self.addr)
