@@ -107,7 +107,19 @@ class Message:
 
     def process_ready_request(self, value):
         return self.game_state_recorder.update_ready_status(self.client_address, value)
+    
+    def broadcast_message(self, content):
+        content_bytes = self._json_encode(content, "utf-8")
+        message = self._create_message(
+            content_bytes=content_bytes, content_type="text/json", content_encoding="utf-8"
+        )
 
+        for addr, details in self.game_state_recorder.player_dictionary.items():
+            try:
+                details["connection"].send(message)
+                logging.info(f"Broadcasted message to {addr}: {content}")
+            except Exception as e:
+                   logging.error(f"Failed to send broadcast to {addr}: {e}")
     '''
     Create a response for a json request 
     '''
@@ -118,6 +130,7 @@ class Message:
         if action == "test":
             answer = f"Hello client, you have successfully pinged the server and got a response back"
             content = {"result": answer}
+
         elif (action == "ready"):
             answer = f"{self.client_address} has updated their ready status"
             if(self.process_ready_request(value)):
@@ -126,6 +139,12 @@ class Message:
             else:
                 dictionary_status = "Request FAILED to process in server game state recorder"
                 content = {"result": answer + ". " + dictionary_status}
+
+        elif (action == "chat"):
+            answer = f"{self.client_address} says: {value}"
+            content = {"result": f"Message broadcasted: {value}"}
+            self.broadcast_message({"result": answer})
+
         else:
             content = {"result": f'Error: invalid action "{action}".'}
         content_encoding = "utf-8"
