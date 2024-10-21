@@ -21,3 +21,7 @@ This is a simple Tic-Tac-Toe game implemented using Python and sockets.
   * The only working request is test. Example call from a client:
     * python3 app-client.py 'localhost' 65432 test <null value for now (tester)>
     
+**Message Protocol:**
+* All messages are formed using JSON format, messages to the server are formatted as
+* ACTIONTYPE : ACTION_VALUE, where ACTIONTYPE is defined in a list of acceptable values, checked both at the client and server side.
+* and messages from the server to the client are currently regulated to response : response value, where the response value is a message to the client
