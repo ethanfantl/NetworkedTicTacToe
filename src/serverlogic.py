@@ -114,7 +114,7 @@ class Message:
             content_bytes=content_bytes, content_type="text/json", content_encoding="utf-8"
         )
 
-        for addr, details in self.game_state_recorder.player_dictionary.items():
+        for addr, details in self.game_state_recorder.players.items():
             try:
                 details["connection"].send(message)
                 logging.info(f"Broadcasted message to {addr}: {content}")
@@ -325,41 +325,64 @@ class PlayerNotFoundError(Exception):
             
 class GameStateRecorder:
     def __init__(self):
-        self.player_dictionary = {}
+        self.players = {}
+        self.waiting_players = {}
+        self.game_sessions = [] # a list for now if we want to have multiple games running later
+
+    # for sending quick messages back to the client    
+    def send_message(self, addr, content):
+        conn = self.players[addr]
+        message = Message(sel, conn, addr, None)
+        message.send_response(content)
     
-    def add_player(self, addr, connection):
-        if(addr in self.player_dictionary):
+    def add_player(self, addr, connection, message):
+        if(addr in self.players):
             print(f"player from connection {addr} has already been registered in the game state board.")
             return
-        self.player_dictionary[addr] = {
-            "connection": connection,
-            "address": addr,
-            "game_state": {"board": [" "] * 9, "ready": "no", "turn": None}
-        }
-        logging.info( f"Player from connection {addr} has been successfully added to the game state board")
+        player_name = "player1" if not self.waiting_players else "player2"
+        if not self.waiting_players:
+            self.players[addr] = {'connection': connection, 'message_object': message, 'player_name': player_name}
+            logging.info( f"Player from connection {addr} has been successfully added to the game state board with name {player_name}")
+        else:
+            player1 = self.waiting_player
+            player2 = addr
+            session = GameSession(player1, player2)
+            self.game_sessions.append(session)
+            self.waiting_players = None
+            # notify both players of a starting game
+            self.send_message(player1, {'action': 'start', 'symbol': 'X', 'message': 'Game started! You are X.'})
+            self.send_message(player2, {'action': 'start', 'symbol': 'O', 'message': 'Game started! You are O.'})
         
     def remove_player(self, addr):
-        if addr not in self.player_dictionary:
-            raise PlayerNotFoundError("You are trying to remove a player that is not registered in the game state recorder. Exiting...")
-        del self.player_dictionary[addr] 
-        logging.info(f"Player {addr} has been removed")
+        session = self.find_session_by_player(addr)
+        if session:
+            opponent_addr = [p for p in session.players if p != addr][0]
+            self.send_message(opponent_addr, {'action': 'opponent_left', 'message': 'Your opponent has disconnected.'})
+            self.game_sessions.remove(session)
+        if addr in self.players:
+            del self.players[addr]
+        logging.info(f"Player {addr} has been removed and any active game sessions have been removed")
+    
+    def find_session_by_player(self, player_addr):
+        for active_session in self.game_sessions:
+            if player_addr in active_session.players:
+                return active_session
+        return None
            
-    def update_ready_status(self, addr, is_ready):
-        if addr not in self.player_dictionary:
-            raise PlayerNotFoundError("Server tried to update the ready status of a player that has not been registered in the GameStateRecorder")
-        if(is_ready != "yes" and is_ready != "no"):
-            print (f"You tried to update player ready status with invalid option {is_ready}. Your options are yes|no")
-            return False
-        if (is_ready == "yes"):
-            self.player_dictionary[addr]["game_state"]["ready"] = "yes"
-        else:
-            logging.info(f"Setting player {addr} to not ready")
-            self.player_dictionary[addr]["game_state"]["ready"] = "no"
-            
-            
-        for address, details in self.player_dictionary.items():
-            logging.info(f"Player address is {address}, status is {details['game_state']['ready']}")
-        return True
+    # def update_ready_status(self, addr, is_ready):
+        # if addr not in self.players:
+            # raise PlayerNotFoundError("Server tried to update the ready status of a player that has not been registered in the GameStateRecorder")
+        # if(is_ready != "yes" and is_ready != "no"):
+            # print (f"You tried to update player ready status with invalid option {is_ready}. Your options are yes|no")
+            # return False
+        # if (is_ready == "yes"):
+            # self.players[addr]["game_state"]["ready"] = "yes"
+        # else:
+            # logging.info(f"Setting player {addr} to not ready")
+            # self.players[addr]["game_state"]["ready"] = "no"
+       #  for address, details in self.players.items():
+       #      logging.info(f"Player address is {address}, status is {details['game_state']['ready']}")
+       #  return True
     
         
         

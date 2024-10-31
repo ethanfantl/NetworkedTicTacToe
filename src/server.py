@@ -20,14 +20,14 @@ def accept_connection(sock):
     # set our new client connection to non-blcoking mode
     conn.setblocking(False)
     
-    # register the client with the game state recorder
-    game_state_recorder.add_player(addr, conn)
-    
     # create a message object (in serverlogic.py) to handle communication with this specific client
     message = serverlogic.Message(sel, conn, addr, game_state_recorder) 
     
     # register new client socket with the selector for monitoring read events
     sel.register(conn, selectors.EVENT_READ, data=message)
+    
+    # register the client with the game state recorder, pass the message instance so we can keep an open communication over the socket
+    game_state_recorder.add_player(addr, conn, message)
 
 def main():
     if len(sys.argv) != 3:
