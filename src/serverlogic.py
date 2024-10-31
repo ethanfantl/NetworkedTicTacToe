@@ -5,7 +5,7 @@ import io
 import struct
 import logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 '''
@@ -272,6 +272,53 @@ class Message:
             self.read()
         if mask & selectors.EVENT_WRITE:
             self.write()
+            
+'''
+We need to define game logic on the server side to handle updates to the game state recorder
+'''
+
+class GameSession:
+    def __init(self, player1, player2):
+        self.board = [['' for _ in range(3)] for _ in range(3)] # establish blank board on server side
+        self.players = [player1, player2]
+        self.current_turn = player1
+        self.winner = None
+        
+    def make_move(self, player, row, col):
+        if(self.current_turn != player):
+            return{'status':'error', 'message':'not your turn buko'}
+        if(self.board[row][col] != ''):
+            return{'status':'error', 'message':'spot is already occupited'}
+        self.board[row][col] = 'X' if player == self.players[0] else "O"
+        self.check_winner()
+        self.current_turn = self.players[0] if self.current_turn == self.players[1] else self.players[1]
+        return{'status':'succuss', 'board':self.baord, 'winner':self.winner}
+    
+    def check_winner(self):
+        # Check rows for a winner
+        for row in self.board:
+            if row[0] == row[1] == row[2] and row[0] != '':
+                self.winner = row[0]
+                return
+
+        # Check columns for a winner
+        for col in range(3):
+            if self.board[0][col] == self.board[1][col] == self.board[2][col] and self.board[0][col] != '':
+                self.winner = self.board[0][col]
+                return
+
+        # Check diagonals for a winner
+        if self.board[0][0] == self.board[1][1] == self.board[2][2] and self.board[0][0] != '':
+            self.winner = self.board[0][0]
+            return
+        if self.board[0][2] == self.board[1][1] == self.board[2][0] and self.board[0][2] != '':
+            self.winner = self.board[0][2]
+            return
+
+        # If no winner, check for a draw
+        if all(cell != '' for row in self.board for cell in row):
+            self.winner = 'Draw'
+        
 
 class PlayerNotFoundError(Exception):
     pass
