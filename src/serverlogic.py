@@ -155,9 +155,12 @@ class Message:
             self.broadcast_message({"result": answer})
             
         elif action == "move":
-            session = self.game_state_recorder.find_session_by_player(self.client_address)
+            session = self.game_state_recorder.game_session
             if session:
-                move_result = session.make_move(self.client_address, value['row'], value['col'])
+                value = int(value)
+                row = value // 3
+                col = value % 3
+                move_result = session.make_move(self.client_address, row, col)
                 if move_result["status"] == 'success':
                     # send updated board to players
                     for player_addr in session.players:
@@ -332,7 +335,7 @@ class GameSession:
         self.board[row][col] = 'X' if player == self.players[0] else "O"
         self.check_winner()
         self.current_turn = self.players[0] if self.current_turn == self.players[1] else self.players[1]
-        return{'status':'sucess', 'board':self.board, 'winner':self.winner}
+        return{'status':'success', 'board':self.board, 'winner':self.winner}
     
     def check_winner(self):
         # Check rows for a winner
