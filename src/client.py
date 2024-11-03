@@ -15,7 +15,6 @@ valid_actions = [
     "test",
     "connect",
     "disconnect",
-    "ready",
     "move",
     "chat"
 ]
@@ -41,6 +40,7 @@ def start_connection(host, port, request):
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
     message = clientlogic.Message(sel, sock, addr, request)
     sel.register(sock, events, data=message)
+    return message
 
 def handle_input(stdin, message):
     # This function will be called when there's input from stdin
