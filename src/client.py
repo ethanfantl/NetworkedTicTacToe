@@ -42,14 +42,15 @@ def start_connection(host, port, request):
     sel.register(sock, events, data=message)
     return message
 
-def handle_input(stdin, message):
-    # This function will be called when there's input from stdin
-    new_action = input("Enter value: \n")
-    new_value = input()
+def handle_input(message):
+    sys.stdout.flush() # helps with order of appearance in terminal, for readability
+    new_action = input("Enter new action: ").strip()
     if (new_action not in valid_actions):
         print("You entered an invalid action, please use one of the following actions")
         print(valid_actions)
         return
+    new_value = input("Enter new value: ").strip()
+    logging.info(f"sending new action {new_action} and new value {new_value} to server")
     message.send_new_request(new_action, new_value)
 
 if len(sys.argv) != 5:
@@ -65,30 +66,48 @@ if(action not in valid_actions):
 request = create_request(action, value)
 start_connection(host, port, request) # opens non blocking with socket.connect_ex
 
+# this is kinda ugly but it fixed the logs and requests being out of order in the terminal, come back to this
+# because this handles only the first request, then we have the other while loop to handle the rest
+try:
+    response_received = False
+    while not response_received:
+        events = sel.select(timeout=None)
+        for key, mask in events:
+            message = key.data
+            try:
+                message.process_events(mask)
+                if message.response is not None:
+                    response_received = True
+                    message.response = None  # Reset the response
+            except Exception as e:
+                logging.error(f"Main: error: exception for {message.addr}:\n{traceback.format_exc()}")
+                message.close()
+                logging.info(f"Disconnected from {message.addr}")
+                sys.exit(1)
+except KeyboardInterrupt:
+    logging.info("Caught keyboard interrupt, closing the program now")
+    sys.exit(1)
+
 sel.register(sys.stdin, selectors.EVENT_READ, data="input")
-print("Enter action:")
+print("Entering new actions")
 try:
     while True:
         events = sel.select(timeout=None)
         for key, mask in events:
             if key.data == "input":
-                # Ok first we have to handle the users input
-                message = next(iter(sel.get_map().values())).data  # Get the message from the socket (I got to clean this up for sure)
-                handle_input(key.fileobj, message)
-            else:
-                # Then handle all the other stuff from socketing like server responses.
-                message = key.data
+                # message = next(iter(sel.get_map().values())).data  # Get the message from the socket (I got to clean this up for sure)
+                handle_input(message)
+            elif key.data is message:
                 try:
                     message.process_events(mask)
                     if message.response is not None:
+                        # You can handle the response here if needed
                         message.response = None
                 except Exception as e:
                     logging.error(f"Main: error: exception for {message.addr}:\n{traceback.format_exc()}")
                     message.close()
                     logging.info(f"Disconnected from {message.addr}")
-
-        if not sel.get_map():
-            break
+                    sys.exit(1)
 except KeyboardInterrupt:
     logging.info("Caught keyboard interrupt, closing the program now")
 finally:
