@@ -142,6 +142,12 @@ class Message:
 
         elif action == "connect":
             self.game_state_recorder.add_player(self.client_address, self.client_sock, self)
+            content = {"result": f"Player {self.client_address} connected successfully"}  # Add this line
+        
+        elif action == "disconnect":
+            self.game_state_recorder.remove_player(self.client_address)
+            self.close()
+            return None
 
         elif (action == "chat"):
             answer = f"{self.client_address} says: {value}"
@@ -217,20 +223,27 @@ class Message:
         self._select_selector_events_mask("w") # set to write now that we have reae
     
     def create_response(self):
-        if self.json_header["content-type"] == "text/json":
-            response = self._create_response_json_content()
+        response = self._create_response_json_content()
+        if response:
+            message = self._create_message(**response)
+            self.response_created = True
+            self._send_buffer += message 
         else:
-            raise ValueError("uh oh") 
-        message = self._create_message(**response)
-        self.response_created = True
-        self._send_buffer += message
+            logging.info(f"no response to create for action {self.request.get('action')}")
+        # if self.json_header["content-type"] == "text/json":
+            # response = self._create_response_json_content()
+        # else:
+            # raise ValueError("uh oh") 
+        # message = self._create_message(**response)
+        # self.response_created = True
+        # self._send_buffer += message
     
     '''
     This is called by process events. This method reads data from our client, processes the header and request data when all data is received
     '''
     def read(self):
         self._read() # internal read
-        logging.info("The server has interally read a new message")
+        logging.info(f"The server has interally read a new message")
         
         if self._json_header_length is None:
             self.process_fixed_protocol_header()
@@ -354,7 +367,7 @@ class GameStateRecorder:
     def __init__(self):
         self.players = {}
         self.waiting_player = None
-        self.game_sessions = [] # a list for now if we want to have multiple games running later
+        self.game_session = None # we can make this a list later if we want to host multiple games at a time
 
     # for sending quick messages back to the client    
     def send_message(self, addr, content):
@@ -379,7 +392,7 @@ class GameStateRecorder:
             player1 = self.waiting_player
             player2 = addr
             session = GameSession(player1, player2)
-            self.game_sessions.append(session)
+            self.game_session = session
             self.waiting_player = None
             
             # notify both players of a starting game
@@ -387,17 +400,16 @@ class GameStateRecorder:
             self.send_message(player2, {'action': 'start', 'symbol': 'O', 'message': 'Game started! You are O.'})
         
     def remove_player(self, addr):
-        session = self.find_session_by_player(addr)
-        if session:
-            opponent_addr = [p for p in session.players if p != addr][0]
-            self.send_message(opponent_addr, {'action': 'opponent_left', 'message': 'Your opponent has disconnected.'})
-            self.game_sessions.remove(session)
-        if addr in self.players:
-            del self.players[addr]
-        logging.info(f"Player {addr} has been removed and any active game sessions have been removed")
-    
-    def find_session_by_player(self, player_addr):
-        for active_session in self.game_sessions:
-            if player_addr in active_session.players:
-                return active_session
+        self.game_session = None
+        logging.info(f"Player {addr} has disconnected from the game. The game session has been brutally murdered")
+        if self.waiting_player is not None:
+            self.waiting_player = None
+        del self.players[addr]
+        logging.info(f"The waiting player queue has been cleared and the player has been removed from the list of all players")
+        
+    # save for later if we want to try and have more than one game session at a time
+    # def find_session_by_player(self, player_addr):
+    #     for active_session in self.game_sessions:
+    #         if player_addr in active_session.players:
+    #             return active_session
         return None
