@@ -31,6 +31,11 @@ This is a simple Tic-Tac-Toe game implemented using Python and sockets.
     * `python3 client.py '' 65432 connect null`
     * This call will register a player with the server. If you are the first player, then you will be placed in a queue waiting for another player. If you are the second player, once you connect, the game will begin!
     * Since this is a connect request with no action value, pass null in as the second option.
+  * Our next working request is disconnection. When a client wants to disconnect from the server, they send something like:
+    * `python3 client.py '' 65432 disconnect null`
+    * This will gracefully remove the player from the game state recorder's list of players and kill any active game session
+    * The server will remain active to accept more incoming requests (our max right now is 2, honeslty I have no idea what will happen if more than 2 join the server)
+    * IN progress : Disconnection from keyboard interrupt is not very graceful, NOT RECOMMENDED in current version
     
 **Message Protocol:**
 * All messages are formed using JSON format, messages to the server are formatted as
