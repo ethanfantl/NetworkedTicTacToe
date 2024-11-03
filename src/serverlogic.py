@@ -46,11 +46,17 @@ class Message:
             data = self.client_sock.recv(4096) # right now read up to 4096 bytes (may need to change later)
         except BlockingIOError:
             pass # since we have a non blocking socket, hitting this means no data is available so pass
+        except ConnectionResetError:
+            # connection was reset by the client
+            logging.info(f"Connection was reset by the client {self.client_address}")
+            self.close()
         else:
             if data:
                 self._recieved_buffer += data
             else:
-                raise RuntimeError("No data indicating the client has closed connection. Peer closed :(")
+                # raise RuntimeError("No data indicating the client has closed connection. Peer closed :(")
+                logging.info(f"Connection was closed by the client {self.client_address}")
+                self.close()
     
     '''
     Send data from our send buffer (staged in later methods) to the client socket
@@ -116,7 +122,9 @@ class Message:
 
         for addr, details in self.game_state_recorder.players.items():
             try:
-                details["connection"].send(message)
+                # details["connection"].send(message)
+                message_object = details['message_object']
+                message_object.queue_message(content)
                 logging.info(f"Broadcasted message to {addr}: {content}")
             except Exception as e:
                    logging.error(f"Failed to send broadcast to {addr}: {e}")
@@ -126,29 +134,41 @@ class Message:
     def _create_response_json_content(self):
         action = self.request.get("action")
         value = self.request.get("value")
+        content = ''
         
         if action == "test":
             answer = f"Hello client, you have successfully pinged the server and got a response back"
             content = {"result": answer}
 
-        elif (action == "ready"):
-            answer = f"{self.client_address} has updated their ready status"
-            if(self.process_ready_request(value)):
-                dictionary_status = "Request has been recorded in game state recorder"
-                content = {"result": answer + ". " + dictionary_status}
-            else:
-                dictionary_status = "Request FAILED to process in server game state recorder"
-                content = {"result": answer + ". " + dictionary_status}
+        elif action == "connect":
+            self.game_state_recorder.add_player(self.client_address, self.client_sock, self)
 
         elif (action == "chat"):
             answer = f"{self.client_address} says: {value}"
             content = {"result": f"Message broadcasted: {value}"}
             self.broadcast_message({"result": answer})
-
+            
+        elif action == "move":
+            session = self.game_state_recorder.find_session_by_player(self.client_address)
+            if session:
+                move_result = session.make_move(self.client_address, value['row'], value['col'])
+                if move_result["status"] == 'success':
+                    # send updated board to players
+                    for player_addr in session.players:
+                        self.game_state_recorder.send_message(player_addr, {'action': 'update', 'board': move_result["board"]})
+                    content = {'result': 'move preformed'}
+                    if move_result['winner']:
+                        # notifiy both players that the game has been won
+                        for player_addr in session.players:
+                            self.game_state_recorder.send_message(player_addr, {'action': 'game_over', 'board': move_result['board']})
+                else:
+                    content = {'result': move_result['message']}
+            else:
+                content = {'result': 'No active game session found for player'}
         else:
             content = {"result": f'Error: invalid action "{action}".'}
-        content_encoding = "utf-8"
         
+        content_encoding = "utf-8"
         response = {
             "content_bytes": self._json_encode(content, content_encoding),
             "content_type": "text/json",
@@ -191,10 +211,10 @@ class Message:
         if self.json_header["content-type"] == "text/json":
             encoding = self.json_header["content-encoding"]
             self.request = self._json_decode(data, encoding)
-            print("Server has received request", repr(self.request), self.client_address)
+            logging.info("Server has received request %s from %s", repr(self.request), self.client_address)
         else:
             raise ValueError(f"server recieved a request from {self.client_address} that was not of type text/json. Please check packet types :(")
-        self._select_selector_events_mask("w") # set to write now that we have read
+        self._select_selector_events_mask("w") # set to write now that we have reae
     
     def create_response(self):
         if self.json_header["content-type"] == "text/json":
@@ -244,22 +264,16 @@ class Message:
     Close the connection with the client and unregister the socket from our selector
     '''    
     def close(self):
-        print("closing connection to", self.client_address)
+        logging.info(f"Closing connection to {self.client_address}")
         try:
             self.selector.unregister(self.client_sock)
         except Exception as e:
-            print(
-                f"error: selector.unregister() failed and threw an exception for",
-                f"{self.client_address}:{repr(e)}"
-            )
+            logging.error(f"Error: selector.unregister() failed and threw an exception for {self.client_address}: {repr(e)}")
             
         try:
             self.client_sock.close()
         except OSError as e:
-            print(
-                f"error: socket.close() exception for",
-                f"{self.client_sock}:{repr(e)}"
-            )
+            logging.error(f"Error: socket.close() exception for {self.client_sock}: {repr(e)}")
         finally:
             self.client_sock = None
     
@@ -273,12 +287,25 @@ class Message:
         if mask & selectors.EVENT_WRITE:
             self.write()
             
+    '''
+    This boi should queue messages to be sent off to the clients
+    '''
+    def queue_message(self, content):
+        content_bytes = self._json_encode(content, "utf-8")
+        message = self._create_message(
+            content_bytes=content_bytes,
+            content_type="test/json",
+            content_encoding='utf-8'
+        )
+        self._send_buffer += message
+        self._select_selector_events_mask("w")
+            
 '''
 We need to define game logic on the server side to handle updates to the game state recorder
 '''
 
 class GameSession:
-    def __init(self, player1, player2):
+    def __init__(self, player1, player2):
         self.board = [['' for _ in range(3)] for _ in range(3)] # establish blank board on server side
         self.players = [player1, player2]
         self.current_turn = player1
@@ -292,7 +319,7 @@ class GameSession:
         self.board[row][col] = 'X' if player == self.players[0] else "O"
         self.check_winner()
         self.current_turn = self.players[0] if self.current_turn == self.players[1] else self.players[1]
-        return{'status':'succuss', 'board':self.baord, 'winner':self.winner}
+        return{'status':'sucess', 'board':self.board, 'winner':self.winner}
     
     def check_winner(self):
         # Check rows for a winner
@@ -326,29 +353,35 @@ class PlayerNotFoundError(Exception):
 class GameStateRecorder:
     def __init__(self):
         self.players = {}
-        self.waiting_players = {}
+        self.waiting_player = None
         self.game_sessions = [] # a list for now if we want to have multiple games running later
 
     # for sending quick messages back to the client    
     def send_message(self, addr, content):
-        conn = self.players[addr]
-        message = Message(sel, conn, addr, None)
-        message.send_response(content)
+        if addr in self.players:
+            message_object = self.players[addr]['message_object']
+            message_object.queue_message(content)
+        else:
+            logging.error(f"Attempted to send a message to an unknown player {addr}")
     
     def add_player(self, addr, connection, message):
         if(addr in self.players):
-            print(f"player from connection {addr} has already been registered in the game state board.")
+            logging.error(f"player from connection {addr} has already been registered in the game state board.")
             return
-        player_name = "player1" if not self.waiting_players else "player2"
-        if not self.waiting_players:
-            self.players[addr] = {'connection': connection, 'message_object': message, 'player_name': player_name}
-            logging.info( f"Player from connection {addr} has been successfully added to the game state board with name {player_name}")
+        
+        self.players[addr] = {'connection': connection, 'message_object': message}
+        logging.info(f"Player {addr} has been added to the server")
+        
+        if self.waiting_player is None:
+            self.waiting_player = addr
+            logging.info(f"Player {addr} is waiting for an opponent")
         else:
             player1 = self.waiting_player
             player2 = addr
             session = GameSession(player1, player2)
             self.game_sessions.append(session)
-            self.waiting_players = None
+            self.waiting_player = None
+            
             # notify both players of a starting game
             self.send_message(player1, {'action': 'start', 'symbol': 'X', 'message': 'Game started! You are X.'})
             self.send_message(player2, {'action': 'start', 'symbol': 'O', 'message': 'Game started! You are O.'})
@@ -368,22 +401,3 @@ class GameStateRecorder:
             if player_addr in active_session.players:
                 return active_session
         return None
-           
-    # def update_ready_status(self, addr, is_ready):
-        # if addr not in self.players:
-            # raise PlayerNotFoundError("Server tried to update the ready status of a player that has not been registered in the GameStateRecorder")
-        # if(is_ready != "yes" and is_ready != "no"):
-            # print (f"You tried to update player ready status with invalid option {is_ready}. Your options are yes|no")
-            # return False
-        # if (is_ready == "yes"):
-            # self.players[addr]["game_state"]["ready"] = "yes"
-        # else:
-            # logging.info(f"Setting player {addr} to not ready")
-            # self.players[addr]["game_state"]["ready"] = "no"
-       #  for address, details in self.players.items():
-       #      logging.info(f"Player address is {address}, status is {details['game_state']['ready']}")
-       #  return True
-    
-        
-        
-    

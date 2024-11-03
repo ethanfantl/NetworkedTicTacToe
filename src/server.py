@@ -27,7 +27,7 @@ def accept_connection(sock):
     sel.register(conn, selectors.EVENT_READ, data=message)
     
     # register the client with the game state recorder, pass the message instance so we can keep an open communication over the socket
-    game_state_recorder.add_player(addr, conn, message)
+    # game_state_recorder.add_player(addr, conn, message)
 
 def main():
     if len(sys.argv) != 3:
