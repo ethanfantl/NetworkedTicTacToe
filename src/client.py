@@ -16,7 +16,8 @@ valid_actions = [
     "connect",
     "disconnect",
     "move",
-    "chat"
+    "chat",
+    "rename"
 ]
 
 def create_request(action, value):

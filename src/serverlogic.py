@@ -149,11 +149,19 @@ class Message:
             self.close()
             return None
 
-        elif (action == "chat"):
-            answer = f"{self.client_address} says: {value}"
+        elif action == "chat":
+            username = self.game_state_recorder.usernames[self.client_address]
+            answer = f"{username} says: {value}"
             content = {"result": f"Message broadcasted: {value}"}
             self.broadcast_message({"result": answer})
-            
+
+        elif (action == "rename"):
+            if value in self.game_state_recorder.usernames.values():
+                content = {"result": "Failed to change names, a player already has that name"}
+            else:
+                self.game_state_recorder.usernames[self.client_address] = value
+                content = {"result": f"Username successfully changed to {value}"}
+
         elif action == "move":
             session = self.game_state_recorder.game_session
             if session:
@@ -370,6 +378,7 @@ class GameStateRecorder:
     def __init__(self):
         self.players = {}
         self.waiting_player = None
+        self.usernames = {}
         self.game_session = None # we can make this a list later if we want to host multiple games at a time
 
     # for sending quick messages back to the client    
@@ -385,6 +394,7 @@ class GameStateRecorder:
             logging.error(f"player from connection {addr} has already been registered in the game state board.")
             return
         
+        self.usernames[addr] = addr
         self.players[addr] = {'connection': connection, 'message_object': message}
         logging.info(f"Player {addr} has been added to the server")
         
@@ -407,6 +417,7 @@ class GameStateRecorder:
         logging.info(f"Player {addr} has disconnected from the game. The game session has been brutally murdered")
         if self.waiting_player is not None:
             self.waiting_player = None
+        del self.usernames[addr]
         del self.players[addr]
         logging.info(f"The waiting player queue has been cleared and the player has been removed from the list of all players")
         
