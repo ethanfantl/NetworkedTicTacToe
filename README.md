@@ -41,3 +41,10 @@ This is a simple Tic-Tac-Toe game implemented using Python and sockets.
 * All messages are formed using JSON format, messages to the server are formatted as
 * ACTIONTYPE : ACTION_VALUE, where ACTIONTYPE is defined in a list of acceptable values, checked both at the client and server side.
 * and messages from the server to the client are currently regulated to response : response value, where the response value is a message to the client
+  
+**Currently available actions:**
+* Connect: Any value sent using this will be ignored, only the fact that connect is sent matters
+* Disconnect: Same with connect
+* Chat: The value sent with this will be what is sent to all other players
+* Rename: The value sent with this will be what your player is renamed as for chat purposes
+* Move: The value sent here will indicate where you are going to place a piece on the board, it accepts any value 0-8
