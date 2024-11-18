@@ -31,10 +31,11 @@ def accept_connection(sock):
 
 def main():
     if len(sys.argv) != 3:
-        print("usage:", sys.argv[0], "<host> <port>")
+        print("usage:", sys.argv[0], "server -p PORT  (set the listening IP to 0.0.0.0)")
         sys.exit(1)
         
-    host, port = sys.argv[1], int(sys.argv[2])
+    port = int(sys.argv[2])
+    host = "0.0.0.0"
     
     # create and bind the listen socket
     listenSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
