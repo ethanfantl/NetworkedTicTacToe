@@ -1,116 +1,137 @@
-import sys
-import socket
+import tkinter as tk
+from tkinter import messagebox
+import threading
 import selectors
-import struct
-import traceback
+import clientController
 import clientlogic
 import logging
-
+import sys
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-sel = selectors.DefaultSelector()
+class TicTacToeUI:
+    def __init__(self, root, host, port):
+        self.root = root
+        self.root.title("Networked Tic Tac Toe")
+        self.root.geometry("350x500")
+        self.buttons = [[None for _ in range(3)] for _ in range(3)]
+        self.host = host
+        self.port = port
+        self.message = None
+        self.selector = selectors.DefaultSelector()
+        self.running = True
 
-# basic movement definitions, we can add or change these later
-valid_actions = [
-    "test",
-    "connect",
-    "disconnect",
-    "move",
-    "chat",
-    "rename"
-]
+        self.create_board()
+        self.create_chat()
 
-def create_request(action, value):
-    return dict(
-        type="text/json",
-        encoding="utf-8",
-        content=dict(action=action, value=value),
-    )
+        self.connect_to_server()
 
-def start_connection(host, port, request):
-    addr = (host, port)
-    logging.info(f"Starting connection to {addr}")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setblocking(False)
-    try:
-        sock.connect_ex(addr)
-    except socket.error as e:
-        logging.error(f"Connection failed to {addr}: {e}")
-        return
+    def create_board(self):
+        for i in range(3):
+            for j in range(3):
+                button = tk.Button(self.root, text="", font="Arial 20", width=5, height=2,
+                                   command=lambda i=i, j=j: self.place_piece(i, j))
+                button.grid(row=i, column=j)
+                self.buttons[i][j] = button
 
-    events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = clientlogic.Message(sel, sock, addr, request)
-    sel.register(sock, events, data=message)
-    return message
+        reset_button = tk.Button(self.root, text="Reset", font="Arial 15", command=self.reset_game)
+        reset_button.grid(row=3, column=0, columnspan=3)
 
-def handle_input(message):
-    sys.stdout.flush() # helps with order of appearance in terminal, for readability
-    new_action = input("Enter new action: ").strip()
-    if (new_action not in valid_actions):
-        print("You entered an invalid action, please use one of the following actions")
-        print(valid_actions)
-        return
-    new_value = input("Enter new value: ").strip()
-    logging.info(f"sending new action {new_action} and new value {new_value} to server")
-    message.send_new_request(new_action, new_value)
+    def place_piece(self, i, j):
+        if self.buttons[i][j]["text"] == "":
+            self.send_action("move", str(i * 3 + j))
 
-if len(sys.argv) != 5:
-    print("usage:", sys.argv[0], "<host> <port> <action> <value>")
-    sys.exit(1)
+    def create_chat(self):
+        self.chat_display = tk.Text(self.root, height=10, width=30, state="disabled", wrap="word")
+        self.chat_display.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 
-host, port = sys.argv[1], int(sys.argv[2])
-action, value = sys.argv[3], sys.argv[4]
-if(action not in valid_actions):
-    print("Defined action %s is not a valid action" % action)
-    sys.exit(1)
-    
-request = create_request(action, value)
-start_connection(host, port, request) # opens non blocking with socket.connect_ex
+        self.chat_input = tk.Entry(self.root, width=25)
+        self.chat_input.grid(row=5, column=0, columnspan=2, padx=5, pady=5)
 
-# this is kinda ugly but it fixed the logs and requests being out of order in the terminal, come back to this
-# because this handles only the first request, then we have the other while loop to handle the rest
-try:
-    response_received = False
-    while not response_received:
-        events = sel.select(timeout=None)
-        for key, mask in events:
-            message = key.data
+        send_button = tk.Button(self.root, text="Send", command=self.send_message)
+        send_button.grid(row=5, column=2, padx=5, pady=5)
+
+    def send_message(self):
+        message = self.chat_input.get().strip()
+        if message:
+            self.send_action("chat", message)
+            self.chat_input.delete(0, tk.END)
+
+    def reset_game(self):
+        self.send_action("reset", "")
+        #Placeholder for now
+        #TO DO: Make server handle resets or make server do the reset on a win
+
+    def connect_to_server(self):
+        try:
+            initial_request = clientController.create_request("connect", "")
+            self.message = clientController.start_connection(self.host, self.port, initial_request)
+            if self.message:
+                #Idk if wee want to use threads, it was the only way I could get this to work
+                threading.Thread(target=self.listen_to_server, daemon=True).start()
+        except Exception as e:
+            logging.error(f"Failed to connect to server: {e}")
+            messagebox.showerror("Error", "Could not connect to server")
+            self.running = False
+
+    def send_action(self, action, value):
+        if self.message:
+
             try:
-                message.process_events(mask)
-                if message.response is not None:
-                    response_received = True
-                    message.response = None  # Reset the response
+                self.message.send_new_request(action, value)
             except Exception as e:
-                logging.error(f"Main: error: exception for {message.addr}:\n{traceback.format_exc()}")
-                message.close()
-                logging.info(f"Disconnected from {message.addr}")
-                sys.exit(1)
-except KeyboardInterrupt:
-    logging.info("Caught keyboard interrupt, closing the program now")
-    sys.exit(1)
+                logging.error(f"Failed to send action: {e}")
 
-sel.register(sys.stdin, selectors.EVENT_READ, data="input")
-print("Entering new actions")
-try:
-    while True:
-        events = sel.select(timeout=None)
-        for key, mask in events:
-            if key.data == "input":
-                # message = next(iter(sel.get_map().values())).data  # Get the message from the socket (I got to clean this up for sure)
-                handle_input(message)
-            elif key.data is message:
-                try:
-                    message.process_events(mask)
-                    if message.response is not None:
-                        # You can handle the response here if needed
-                        message.response = None
-                except Exception as e:
-                    logging.error(f"Main: error: exception for {message.addr}:\n{traceback.format_exc()}")
-                    message.close()
-                    logging.info(f"Disconnected from {message.addr}")
-                    sys.exit(1)
-except KeyboardInterrupt:
-    logging.info("Caught keyboard interrupt, closing the program now")
-finally:
-    sel.close()
-    logging.info("Selector closed, exiting program/client")
+                messagebox.showerror("Error", "Failed to send action to server")
+
+    def listen_to_server(self):
+        try:
+            while self.running:
+                events = self.message.selector.select(timeout=1)
+                for key, mask in events:
+                    message = key.data
+                    if message:
+                        message.process_events(mask)
+                        if message.response:
+                            self.handle_server_response(message.response)
+                            message.response = None
+        except Exception as e:
+            logging.error(f"Error in server communication: {e}")
+            self.running = False
+
+    def handle_server_response(self, response):
+        ##Only problem here is handling chats, we do that big little thing which is hard to parse
+        ## Either add a action thing to the messages when server sends, or extract result in this code section
+        action = response.get("action")
+        if action == "update":
+            self.update_board(response.get("board"))
+        elif action == "game_over":
+            self.update_board(response.get("board"))
+            winner = response.get("winner", "No one")
+            messagebox.showinfo("Game Over", f"The winner is: {winner}")
+        elif action == "chat":
+            self.append_chat(response.get("message"))
+        elif action == "reset":
+            self.update_board([["" for _ in range(3)] for _ in range(3)])
+
+    def update_board(self, board):
+        for i in range(3):
+            for j in range(3):
+                self.buttons[i][j]["text"] = board[i][j]
+
+    def append_chat(self, message):
+        self.chat_display.config(state="normal")
+        self.chat_display.insert("end", message + "\n")
+        self.chat_display.config(state="disabled")
+        self.chat_display.see("end")
+
+
+# Run the game
+if __name__ == "__main__":
+    if len(sys.argv) != 5:
+        print("usage:", sys.argv[0], "client -i SERVER_IP/DNS -p PORT")
+        sys.exit(1)
+
+    host, port = sys.argv[2], int(sys.argv[4])       
+    root = tk.Tk()
+    game = TicTacToeUI(root, host, port)
+    root.mainloop()
