@@ -109,13 +109,13 @@ class Message:
             self.response = self._json_decode(data)
             logging.info(f"Got a response {self.response} from the server")
             print(f"Received response: {self.response}")
-            # self.close() -> we don't want to close the socket, we want persistant player connection
+            
             self._json_header_length = None
             self.json_header = None
             self.request = None
             self._request_queued = False
             self._recv_buffer = b""
-            self._select_selector_events_mask("w")
+            self._select_selector_events_mask("rw")
 
     def read(self):
         self._read()
