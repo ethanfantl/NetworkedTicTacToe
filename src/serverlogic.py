@@ -170,14 +170,21 @@ class Message:
                 col = value % 3
                 move_result = session.make_move(self.client_address, row, col)
                 if move_result["status"] == 'success':
-                    # send updated board to players
-                    for player_addr in session.players:
-                        self.game_state_recorder.send_message(player_addr, {'action': 'update', 'board': move_result["board"]})
-                    content = {'result': 'move preformed'}
                     if move_result['winner']:
                         # notifiy both players that the game has been won
+                        logging.info('A player has WON the game! Sending game over messages')
                         for player_addr in session.players:
                             self.game_state_recorder.send_message(player_addr, {'action': 'game_over', 'board': move_result['board']})
+                        session.reset()
+                        reset_content = {'action': 'game_reset', 'board': session.board}
+                        self.broadcast_message(reset_content)
+                    else:
+                        # send updated board to players
+                        for player_addr in session.players:
+                            self.game_state_recorder.send_message(player_addr, {'action': 'update', 'board': move_result["board"]})
+                        content = {'result': 'move preformed'}
+                   
+                        
                 else:
                     content = {'result': move_result['message']}
             else:
@@ -241,13 +248,6 @@ class Message:
             self._send_buffer += message 
         else:
             logging.info(f"no response to create for action {self.request.get('action')}")
-        # if self.json_header["content-type"] == "text/json":
-            # response = self._create_response_json_content()
-        # else:
-            # raise ValueError("uh oh") 
-        # message = self._create_message(**response)
-        # self.response_created = True
-        # self._send_buffer += message
     
     '''
     This is called by process events. This method reads data from our client, processes the header and request data when all data is received
@@ -271,24 +271,23 @@ class Message:
     This method is called by process events. This will write data to the client if a response has been created
     ''' 
     def write(self):
-        if self.request:
-            if not self.response_created:
-                self.create_response()
+        if self.request and not self.response_created:
+            self.create_response()
         self._write()
-        
         if not self._send_buffer and self.response_created:
-            self.response_created = False
-            self.request = None
-            self._json_header_length = None
-            self.json_header = None
-            self._recieved_buffer = b""
-            self._select_selector_events_mask("r")
+                self.response_created = False
+                self.request = None
+                self._json_header_length = None
+                self.json_header = None
+                self._recieved_buffer = b""
+                self._select_selector_events_mask("r")
     
     '''
     Close the connection with the client and unregister the socket from our selector
     '''    
     def close(self):
         logging.info(f"Closing connection to {self.client_address}")
+        self.game_state_recorder.remove_player(self.client_address) # remove players
         try:
             self.selector.unregister(self.client_sock)
         except Exception as e:
@@ -318,11 +317,12 @@ class Message:
         content_bytes = self._json_encode(content, "utf-8")
         message = self._create_message(
             content_bytes=content_bytes,
-            content_type="test/json",
+            content_type="text/json",
             content_encoding='utf-8'
         )
         self._send_buffer += message
-        self._select_selector_events_mask("w")
+        self.response_created = True
+        self._select_selector_events_mask("rw")
             
 '''
 We need to define game logic on the server side to handle updates to the game state recorder
@@ -339,7 +339,7 @@ class GameSession:
         if(self.current_turn != player):
             return{'status':'error', 'message':'not your turn buko'}
         if(self.board[row][col] != ''):
-            return{'status':'error', 'message':'spot is already occupited'}
+            return{'status':'error', 'message':'spot is already occupied'}
         self.board[row][col] = 'X' if player == self.players[0] else "O"
         self.check_winner()
         self.current_turn = self.players[0] if self.current_turn == self.players[1] else self.players[1]
@@ -369,6 +369,11 @@ class GameSession:
         # If no winner, check for a draw
         if all(cell != '' for row in self.board for cell in row):
             self.winner = 'Draw'
+            
+    def reset(self):
+        self.board = [['' for _ in range(3)] for _ in range(3)]
+        self.current_turn = self.players[0]
+        self.winner = None
         
 
 class PlayerNotFoundError(Exception):
@@ -413,17 +418,21 @@ class GameStateRecorder:
             self.send_message(player2, {'action': 'start', 'symbol': 'O', 'message': 'Game started! You are O.'})
         
     def remove_player(self, addr):
-        self.game_session = None
-        logging.info(f"Player {addr} has disconnected from the game. The game session has been brutally murdered")
-        if self.waiting_player is not None:
+        if addr in self.players:
+            del self.players[addr]
+        if addr in self.usernames:
+            del self.usernames[addr]
+        if self.game_session and addr in self.game_session.players:
+            self.game_session = None
+        if self.waiting_player == addr:
             self.waiting_player = None
-        del self.usernames[addr]
-        del self.players[addr]
-        logging.info(f"The waiting player queue has been cleared and the player has been removed from the list of all players")
-        
-    # save for later if we want to try and have more than one game session at a time
-    # def find_session_by_player(self, player_addr):
-    #     for active_session in self.game_sessions:
-    #         if player_addr in active_session.players:
-    #             return active_session
-        return None
+        logging.info(f"Player {addr} has been removed from the server.")
+    
+    def end_game_session(self):
+        if self.game_session:
+            for player_addr in self.game_session.players:
+                self.send_message(
+                    player_addr,
+                    {'action': 'game_over', 'message': 'Game over.'},
+                )
+            self.game_session = None
