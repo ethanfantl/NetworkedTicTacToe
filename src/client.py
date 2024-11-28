@@ -112,6 +112,8 @@ class TicTacToeUI:
             self.append_chat(response.get("message"))
         elif action == "reset":
             self.update_board([["" for _ in range(3)] for _ in range(3)])
+        elif (isinstance(response, dict) and "result" in response and len(response) == 1):
+            self.append_chat(response.get("result"))
 
     def update_board(self, board):
         for i in range(3):
