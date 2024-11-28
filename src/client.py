@@ -12,7 +12,7 @@ class TicTacToeUI:
     def __init__(self, root, host, port):
         self.root = root
         self.root.title("Networked Tic Tac Toe")
-        self.root.geometry("350x500")
+        self.root.geometry("350x550")
         self.buttons = [[None for _ in range(3)] for _ in range(3)]
         self.host = host
         self.port = port
@@ -22,7 +22,7 @@ class TicTacToeUI:
 
         self.create_board()
         self.create_chat()
-
+        self.create_rename()
         self.connect_to_server()
 
     def create_board(self):
@@ -49,6 +49,20 @@ class TicTacToeUI:
 
         send_button = tk.Button(self.root, text="Send", command=self.send_message)
         send_button.grid(row=5, column=2, padx=5, pady=5)
+    
+    def create_rename(self):
+        self.rename_input = tk.Entry(self.root, width=25)
+        self.rename_input.grid(row=6, column=0, columnspan=2, padx=5, pady=5)
+        rename_button = tk.Button(self.root, text="Rename", command=self.rename_player)
+        rename_button.grid(row=6, column=2, padx=5, pady=5)
+
+    def rename_player(self):
+        new_name = self.rename_input.get().strip()
+        if len(new_name) > 1:
+            self.send_action("rename", new_name)
+            self.rename_input.delete(0, tk.END)
+        else:
+            messagebox.showwarning("Invalid Input", "Enter a valid name more than 1 character long")
 
     def send_message(self):
         message = self.chat_input.get().strip()
