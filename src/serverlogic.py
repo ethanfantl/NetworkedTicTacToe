@@ -173,8 +173,9 @@ class Message:
                     if move_result['winner']:
                         # notifiy both players that the game has been won
                         logging.info('A player has WON the game! Sending game over messages')
+                        logging.info(move_result["winner"])
                         for player_addr in session.players:
-                            self.game_state_recorder.send_message(player_addr, {'action': 'game_over', 'board': move_result['board'], "winner":str(self.game_state_recorder.game_session.current_turn)})
+                            self.game_state_recorder.send_message(player_addr, {'action': 'game_over', 'board': move_result['board'], "winner":move_result['winner']})
                         session.reset()
                         reset_content = {'action': 'game_reset', 'board': session.board}
                         self.broadcast_message(reset_content)
@@ -368,7 +369,7 @@ class GameSession:
 
         # If no winner, check for a draw
         if all(cell != '' for row in self.board for cell in row):
-            self.winner = 'Draw'
+            self.winner = 'No one, its a draw!'
             
     def reset(self):
         self.board = [['' for _ in range(3)] for _ in range(3)]
