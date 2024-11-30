@@ -120,7 +120,7 @@ class TicTacToeUI:
             self.update_board(response.get("board"))
         elif action == "game_over":
             self.update_board(response.get("board"))
-            winner = response.get("winner", "No one")
+            winner = response.get("winner")
             messagebox.showinfo("Game Over", f"The winner is: {winner}")
         elif action == "chat":
             self.append_chat(response.get("message"))

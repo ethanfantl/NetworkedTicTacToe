@@ -174,7 +174,7 @@ class Message:
                         # notifiy both players that the game has been won
                         logging.info('A player has WON the game! Sending game over messages')
                         for player_addr in session.players:
-                            self.game_state_recorder.send_message(player_addr, {'action': 'game_over', 'board': move_result['board']})
+                            self.game_state_recorder.send_message(player_addr, {'action': 'game_over', 'board': move_result['board'], "winner":str(self.game_state_recorder.game_session.current_turn)})
                         session.reset()
                         reset_content = {'action': 'game_reset', 'board': session.board}
                         self.broadcast_message(reset_content)
