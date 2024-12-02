@@ -24,6 +24,7 @@ class TicTacToeUI:
         self.create_chat()
         self.create_rename()
         self.connect_to_server()
+        self.game_reset_event = threading.Event()
 
     def create_board(self):
         for i in range(3):
@@ -71,7 +72,7 @@ class TicTacToeUI:
             self.chat_input.delete(0, tk.END)
 
     def reset_game(self):
-        self.send_action("reset", "")
+        self.send_action("game_reset", "")
         #Placeholder for now
         #TO DO: Make server handle resets or make server do the reset on a win
 
@@ -111,6 +112,14 @@ class TicTacToeUI:
         except Exception as e:
             logging.error(f"Error in server communication: {e}")
             self.running = False
+            
+    def show_game_over_message(self, winner):
+        messagebox.showinfo("Game Over", f"The winner is: {winner}")
+        
+    def reset_board(self):
+        for i in range(3):
+            for j in range(3):
+                self.buttons[i][j]["text"] = ""
 
     def handle_server_response(self, response):
         ##Only problem here is handling chats, we do that big little thing which is hard to parse
@@ -121,11 +130,12 @@ class TicTacToeUI:
         elif action == "game_over":
             self.update_board(response.get("board"))
             winner = response.get("winner", "No one, its a tie!")
-            messagebox.showinfo("Game Over", f"The winner is: {winner}")
+            self.show_game_over_message(winner)
+            self.reset_board()
         elif action == "chat":
             self.append_chat(response.get("message"))
-        elif action == "reset":
-            self.update_board([["" for _ in range(3)] for _ in range(3)])
+        elif action == "game_reset":
+           pass
         elif (isinstance(response, dict) and "result" in response and len(response) == 1):
             self.append_chat(response.get("result"))
 
@@ -139,7 +149,6 @@ class TicTacToeUI:
         self.chat_display.insert("end", message + "\n")
         self.chat_display.config(state="disabled")
         self.chat_display.see("end")
-
 
 # Run the game
 if __name__ == "__main__":

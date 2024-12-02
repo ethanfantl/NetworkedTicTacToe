@@ -161,6 +161,15 @@ class Message:
             else:
                 self.game_state_recorder.usernames[self.client_address] = value
                 content = {"result": f"Username successfully changed to {value}"}
+                
+        elif (action == "game_reset"):
+            if self.game_state_recorder.game_session:
+                self.game_state_recorder.game_session.reset()
+                reset_content = {'action': 'game_reset', 'board': self.game_state_recorder.game_session.board}
+                self.broadcast_message(reset_content)
+                content = {'result': 'Game has been reset'}
+            else:
+                content = {'result': 'No active game session to reset'}
 
         elif action == "move":
             session = self.game_state_recorder.game_session
