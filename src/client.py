@@ -8,6 +8,10 @@ import logging
 import sys
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+'''
+This class will handle all the UI changes by using the clientController class and the client Logic class to
+communciate with the server while reflecting changes made in the UI
+'''
 class TicTacToeUI:
     def __init__(self, root, host, port):
         self.root = root
@@ -73,15 +77,12 @@ class TicTacToeUI:
 
     def reset_game(self):
         self.send_action("game_reset", "")
-        #Placeholder for now
-        #TO DO: Make server handle resets or make server do the reset on a win
 
     def connect_to_server(self):
         try:
             initial_request = clientController.create_request("connect", "")
             self.message = clientController.start_connection(self.host, self.port, initial_request)
             if self.message:
-                #Idk if wee want to use threads, it was the only way I could get this to work
                 threading.Thread(target=self.listen_to_server, daemon=True).start()
         except Exception as e:
             logging.error(f"Failed to connect to server: {e}")
@@ -122,8 +123,6 @@ class TicTacToeUI:
                 self.buttons[i][j]["text"] = ""
 
     def handle_server_response(self, response):
-        ##Only problem here is handling chats, we do that big little thing which is hard to parse
-        ## Either add a action thing to the messages when server sends, or extract result in this code section
         action = response.get("action")
         if action == "update":
             self.update_board(response.get("board"))
