@@ -7,7 +7,9 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
+'''
+Message class that is used by our client to communicate with the server
+'''
 class Message:
     def __init__(self, selector, sock, addr, request):
         self.selector = selector
@@ -20,7 +22,8 @@ class Message:
         self.json_header = None
         self.response = None
         self._request_queued = False
-
+        
+    # method for setting correct socket events
     def _select_selector_events_mask(self, event):
         if event == "r":
             new_event = selectors.EVENT_READ
@@ -32,6 +35,7 @@ class Message:
             raise ValueError(f"Invalid event mask mode received.")
         self.selector.modify(self.sock, new_event, data=self)
 
+    # internal read method called by read()
     def _read(self):
         try:
             data = self.sock.recv(4096)
@@ -43,6 +47,7 @@ class Message:
             else:
                 raise RuntimeError("Peer closed.")
 
+    # internal write method called by write
     def _write(self):
         if self._send_buffer:
             try:
@@ -54,15 +59,18 @@ class Message:
                 if not self._send_buffer:
                     self._select_selector_events_mask("r")
 
+    # method for encoding json data sent to server
     def _json_encode(self, obj):
         return json.dumps(obj, ensure_ascii=False).encode('utf-8')
 
+    # method for encoding json data from server
     def _json_decode(self, json_bytes):
         tiow = io.TextIOWrapper(io.BytesIO(json_bytes), encoding='utf-8', newline="")
         obj = json.load(tiow)
         tiow.close()
         return obj
 
+    # create method for sending message to server
     def _create_message(self):
         content_bytes = self._json_encode(self.request["content"])
         json_header = {
@@ -75,6 +83,7 @@ class Message:
         message_hdr = struct.pack(">H", len(json_header_bytes))
         return message_hdr + json_header_bytes + content_bytes
 
+    # create a new request to the server
     def send_new_request(self, new_action, new_value):
         self.request = {
             "type" : "text/json",
@@ -89,6 +98,7 @@ class Message:
         self._request_queued = True
         self._select_selector_events_mask("rw")
 
+    # process header protocol coming from server message
     def process_fixed_protocol_header(self):
         header_length = 2
         if len(self._recv_buffer) >= header_length:
@@ -97,11 +107,13 @@ class Message:
         else:
             logging.info(f"not enough data in the protocol header. Here is the buffer length {len(self._recv_buffer)}")
 
+    # process json header from server message
     def process_json_header(self):
         if len(self._recv_buffer) >= self._json_header_length:
             self.json_header = self._json_decode(self._recv_buffer[:self._json_header_length])
             self._recv_buffer = self._recv_buffer[self._json_header_length:]
 
+    # process response from server
     def process_response(self):
         content_length = self.json_header["content-length"]
         if len(self._recv_buffer) >= content_length:
@@ -117,6 +129,7 @@ class Message:
             self._recv_buffer = b""
             self._select_selector_events_mask("rw")
 
+    # read method called in client class
     def read(self):
         self._read()
         if self._json_header_length is None:
@@ -128,14 +141,14 @@ class Message:
         if self.json_header and self.response is None:
             self.process_response()
         
-        # self._select_selector_events_mask("w")
-
+    # write method for putting data in our buffer to write
     def write(self):
         if not self._request_queued:
             self._send_buffer = self._create_message()
             self._request_queued = True
         self._write()
 
+    # process different events on the client
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
             self.read()
@@ -146,6 +159,7 @@ class Message:
         if not self._send_buffer:
             self._select_selector_events_mask("r")
 
+    # close the connection
     def close(self):
         print("Closing connection to", self.addr)
         try:
