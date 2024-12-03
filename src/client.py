@@ -6,8 +6,14 @@ import clientController
 import clientlogic
 import logging
 import sys
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("tictactoeClient.log", mode='w')
+    ]
+)
 '''
 This class will handle all the UI changes by using the clientController class and the client Logic class to
 communciate with the server while reflecting changes made in the UI
